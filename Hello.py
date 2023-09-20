@@ -78,7 +78,7 @@ def delete_all_files_in_folder(folder_path):
             print(f"Error deleting {file_path}: {e}")
 
 def main():
-    st.title('Text to Speech')
+    st.title('Học,Học nữa, Học mãi')
     words = load_data()
     col1 = st.empty()
     col2 = st.empty()
