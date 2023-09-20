@@ -7,3 +7,4 @@ gtts
 langdetect
 pydub
 moviepy
+concurrent
