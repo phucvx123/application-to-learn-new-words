@@ -40,7 +40,7 @@ def convert_to_audio_parallel(words):
     audio_segments = []
 
     def generate_audio(w, m):
-        tts_word = gTTS(text=f'{w}. means.', lang='en')
+        tts_word = gTTS(text=f'{w}. means', lang='en')
         file_word_path = "file_generated/" + get_random_string(10) + ".mp3"
         tts_word.save(os.path.abspath(file_word_path))
         w_audio = mpy.AudioFileClip(os.path.abspath(file_word_path))
