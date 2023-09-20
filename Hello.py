@@ -5,13 +5,11 @@ import json
 import pandas as pd
 import time
 from langdetect import detect
-from pydub import AudioSegment
-from pydub.playback import play
-import io
-import tempfile
 import random
 import string
 import moviepy.editor as mpy
+import concurrent.futures
+
 
 def load_data():
     try:
@@ -38,50 +36,62 @@ def get_random_string(length):
     result_str = "".join(random.choice(string.ascii_letters) for i in range(length))
     return result_str
 
-def convert_to_audio(words):
-    audio_segments = []  # List to store audio segments
-    
-    for w, m in words.items():
-        # Generate audio for the word
-        detectLanguage(w)
-        tts_word = gTTS(text=f'{w}. means.', lang=detectLanguage(w))
-        file_path = "file_generated/" + get_random_string(10) + ".mp3"
-        tts_word.save(os.path.abspath(file_path))
-        w_audio = mpy.AudioFileClip(os.path.abspath(file_path))
-        # Generate audio for the meaning
-        tts_meaning = gTTS(text=m, lang=detectLanguage(m))
-        m_tempfile = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-        tts_meaning.save(m_tempfile.name)
-        m_audio = AudioSegment.from_mp3(m_tempfile.name)
-        # Append the word and meaning audio to the list
+def convert_to_audio_parallel(words):
+    audio_segments = []
+
+    def generate_audio(w, m):
+        tts_word = gTTS(text=f'{w}. means.', lang='en')
+        file_word_path = "file_generated/" + get_random_string(10) + ".mp3"
+        tts_word.save(os.path.abspath(file_word_path))
+        w_audio = mpy.AudioFileClip(os.path.abspath(file_word_path))
+
+        tts_meaning = gTTS(text=m, lang='vi')
+        file_meaning_path = "file_generated/" + get_random_string(10) + ".mp3"
+        tts_meaning.save(file_meaning_path)
+        m_audio = mpy.AudioFileClip(file_meaning_path)
+
+        return w_audio, m_audio
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = [executor.submit(generate_audio, w, m) for w, m in words.items()]
+
+    for result in results:
+        w_audio, m_audio = result.result()
         audio_segments.append(w_audio)
         audio_segments.append(m_audio)
 
-    # Combine all audio segments into a single audio file
-    combined_audio = AudioSegment.empty()
-    for segment in audio_segments:
-        combined_audio += segmen
-
-    # Save the combined audio to a file
-    combined_audio.export('output.mp3', format='mp3')
+    concatenated_audio = mpy.concatenate_audioclips(audio_segments)
+    concatenated_audio_file = 'output.mp3'
+    concatenated_audio.write_audiofile(concatenated_audio_file)
 
 def detectLanguage(text):
     lang = detect(text)
     return lang
 
+def delete_all_files_in_folder(folder_path):
+    for filename in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, filename)
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+        except Exception as e:
+            print(f"Error deleting {file_path}: {e}")
+
 def main():
-    st.title('Học, Học nữa, Học Mãi :3 :3 ')
+    st.title('Text to Speech')
     words = load_data()
     col1 = st.empty()
     col2 = st.empty()
     word = col1.text_input('Word').strip()
     meaning = col2.text_input('Meaning').strip()
-
-    if st.button('Add'):
-        add_word(words, word, meaning)
-        col1.empty()
-        col2.empty()
-        st.experimental_rerun()
+    if st.button('Add') and meaning:
+        if detect(meaning) != 'vi':
+            st.error('Data add unsuccessful. Meaning is not in Vietnamese.')
+        else:
+            add_word(words, word, meaning)
+            col1.empty()
+            col2.empty()
+            st.experimental_rerun()
 
     selected_rows = []
     df = pd.DataFrame(words.items(), columns=['Word', 'Meaning'])
@@ -109,10 +119,15 @@ def main():
 
         
     if st.button('Convert to Audio'):
-        convert_to_audio(words)
-        print('done')
+        convert_to_audio_parallel(words)
         with open('output.mp3', 'rb') as f:
             st.download_button('Download Audio', f.read(), 'output.mp3')
+        delete_all_files_in_folder("file_generated")
+        # Delete the 'output.mp3' file
+        try:
+            os.remove('output.mp3')
+        except FileNotFoundError:
+            pass
 
 if __name__ == "__main__":
     main()
