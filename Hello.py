@@ -60,7 +60,7 @@ def convert_to_audio(words):
     # Combine all audio segments into a single audio file
     combined_audio = AudioSegment.empty()
     for segment in audio_segments:
-        combined_audio += segment
+        combined_audio += segmen
 
     # Save the combined audio to a file
     combined_audio.export('output.mp3', format='mp3')
@@ -70,7 +70,7 @@ def detectLanguage(text):
     return lang
 
 def main():
-    st.title('From Ha Noi With Love')
+    st.title('Học, Học nữa, Học Mãi :3 :3 ')
     words = load_data()
     col1 = st.empty()
     col2 = st.empty()
