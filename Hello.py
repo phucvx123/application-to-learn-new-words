@@ -9,7 +9,30 @@ import random
 import string
 import moviepy.editor as mpy
 import concurrent.futures
+from tempfile import NamedTemporaryFile
 
+# Set Streamlit page configuration
+st.set_page_config(
+    page_title="Learning English",
+    layout="wide",
+    initial_sidebar_state="auto",
+)
+
+# Hide Streamlit footer and add custom footer text
+hide_streamlit_style = """
+<style>
+footer {visibility: hidden;}
+footer:after {
+    content: '\u00A9 From HaNoi with Love.';
+    visibility: visible;
+    display: block;
+    position: relative;
+    padding: 5px;
+    top: 2px;
+}
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 def load_data():
     try:
@@ -36,33 +59,47 @@ def get_random_string(length):
     result_str = "".join(random.choice(string.ascii_letters) for i in range(length))
     return result_str
 
-def convert_to_audio_parallel(words):
+def convert_to_audio_parallel_with_status(words):
     audio_segments = []
 
     def generate_audio(w, m):
-        tts_word = gTTS(text=f'{w}. means', lang='en')
+        tts_word = gTTS(text=f'{w}.', lang='en', slow=True)
         file_word_path = "file_generated/" + get_random_string(10) + ".mp3"
         tts_word.save(os.path.abspath(file_word_path))
         w_audio = mpy.AudioFileClip(os.path.abspath(file_word_path))
 
-        tts_meaning = gTTS(text=m, lang='vi')
+        tts_meaning = gTTS(text=f'Nghĩa là {m}.', lang='vi', slow=True)
         file_meaning_path = "file_generated/" + get_random_string(10) + ".mp3"
         tts_meaning.save(file_meaning_path)
         m_audio = mpy.AudioFileClip(file_meaning_path)
 
         return w_audio, m_audio
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        results = [executor.submit(generate_audio, w, m) for w, m in words.items()]
+    progress_bar = st.progress(0)  # Initialize the progress bar
 
-    for result in results:
-        w_audio, m_audio = result.result()
-        audio_segments.append(w_audio)
-        audio_segments.append(m_audio)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        total_tasks = len(words)
+        completed_tasks = 0
+
+        for w, m in words.items():
+            result = executor.submit(generate_audio, w, m)
+            while not result.done():
+                time.sleep(0.1)  # Sleep for a short time
+                completed_progress = completed_tasks / total_tasks
+                progress_bar.progress(completed_progress)
+
+            completed_tasks += 1
+            progress = completed_tasks / total_tasks
+            progress_bar.progress(progress)
+
+            w_audio, m_audio = result.result()
+            audio_segments.append(w_audio)
+            audio_segments.append(m_audio)
 
     concatenated_audio = mpy.concatenate_audioclips(audio_segments)
     concatenated_audio_file = 'output.mp3'
     concatenated_audio.write_audiofile(concatenated_audio_file)
+
 
 def detectLanguage(text):
     lang = detect(text)
@@ -78,56 +115,75 @@ def delete_all_files_in_folder(folder_path):
             print(f"Error deleting {file_path}: {e}")
 
 def main():
-    st.title('Học,Học nữa, Học mãi')
+    st.title('Learning English: If You Don’t Walk Today, You’ll Have To Run Tomorrow.')
+
     words = load_data()
-    col1 = st.empty()
+
+    col1= st.empty()
     col2 = st.empty()
-    word = col1.text_input('Word').strip()
-    meaning = col2.text_input('Meaning').strip()
+    with col1:
+        word = st.text_input('Word').strip()
+    with col2:
+        meaning = st.text_input('Meaning').strip()
+
     if st.button('Add') and meaning:
         if detect(meaning) != 'vi':
             st.error('Data add unsuccessful. Meaning is not in Vietnamese.')
         else:
             add_word(words, word, meaning)
-            col1.empty()
-            col2.empty()
-            st.experimental_rerun()
+            st.success('Word added successfully.')
 
-    selected_rows = []
+    st.header("Word Dictionary")
     df = pd.DataFrame(words.items(), columns=['Word', 'Meaning'])
     df['Select'] = [False] * len(df)
 
+    selected_rows = []
     for i, row in df.iterrows():
         row['Select'] = st.checkbox(
             f'{row["Word"]} : {row["Meaning"]}', key=f'checkbox_{i}')
         if row['Select']:
-            selected_rows.append(row["Word"])  # Store the selected words, not indices
+            selected_rows.append(row["Word"]) 
 
-    if st.button('Delete Selected'):
-        delete_selected_words(words, selected_rows)  # Pass selected words, not DataFrame
-        st.success('Data deleted successfully.')
-        time.sleep(0.5)
-        st.experimental_rerun()
+    button_col1, button_col2 = st.columns(2)
+    button_col3, button_col4 = st.columns(2)
+    with button_col1:
+        if st.button('Delete Selected'):
+            delete_selected_words(words, selected_rows) 
+            st.success('Data deleted successfully.')
 
+    with button_col2:
+        if st.button('Delete All'):
+            words = {} 
+            save_data(words)
+            st.success('All data deleted successfully.')
 
-    if st.button('Delete All'):
-        words = {}  # Clear the words dictionary
-        save_data(words)
-        st.success('Data deleted successfully.')
-        time.sleep(0.5)
-        st.experimental_rerun()
+    with button_col3:
+        if st.button('Convert Selected to Audio'):
+            selected_words_data = {w: words[w] for w in selected_rows}
+            if selected_words_data:
+                with st.spinner("Generating Audio..."):
+                    convert_to_audio_parallel_with_status(selected_words_data)
+                st.success('Audio Generation Complete!')
+                with open('output.mp3', 'rb') as f:
+                    st.audio(f.read(), format="audio/mp3")
+                delete_all_files_in_folder("file_generated")
+                try:
+                    os.remove('output.mp3')
+                except FileNotFoundError:
+                    pass
 
-        
-    if st.button('Convert to Audio'):
-        convert_to_audio_parallel(words)
-        with open('output.mp3', 'rb') as f:
-            st.download_button('Download Audio', f.read(), 'output.mp3')
-        delete_all_files_in_folder("file_generated")
-        # Delete the 'output.mp3' file
-        try:
-            os.remove('output.mp3')
-        except FileNotFoundError:
-            pass
+    with button_col4:
+        if st.button('Convert All to Audio'):
+            with st.spinner("Generating Audio..."):
+                convert_to_audio_parallel_with_status(words)
+            st.success('Audio Generation Complete!')
+            with open('output.mp3', 'rb') as f:
+                st.audio(f.read(), format="audio/mp3")
+            delete_all_files_in_folder("file_generated")
+            try:
+                os.remove('output.mp3')
+            except FileNotFoundError:
+                pass
 
 if __name__ == "__main__":
     main()
