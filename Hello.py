@@ -10,6 +10,7 @@ import string
 import moviepy.editor as mpy
 import concurrent.futures
 from tempfile import NamedTemporaryFile
+from pydub import AudioSegment
 
 # Set Streamlit page configuration
 st.set_page_config(
@@ -46,8 +47,8 @@ def save_data(words):
     with open('data.json', 'w') as f:
         json.dump(words, f)
 
-def add_word(words, word, meaning):
-    words[word] = meaning
+def add_word(words, word, english_meaning, vietnamese_meaning):
+    words[word] = {'English Meaning': english_meaning, 'Vietnamese Meaning': vietnamese_meaning}
     save_data(words)
 
 def delete_selected_words(words, selected_rows):
@@ -62,27 +63,45 @@ def get_random_string(length):
 def convert_to_audio_parallel_with_status(words):
     audio_segments = []
 
-    def generate_audio(w, m):
-        tts_word = gTTS(text=f'{w}.', lang='en', slow=True)
+    def generate_audio(w, em, vm):
+        tts_word = gTTS(text=f'{w}.', lang='en')
         file_word_path = "file_generated/" + get_random_string(10) + ".mp3"
         tts_word.save(os.path.abspath(file_word_path))
         w_audio = mpy.AudioFileClip(os.path.abspath(file_word_path))
 
-        tts_meaning = gTTS(text=f'Nghĩa là {m}.', lang='vi', slow=True)
+        tts_meaning_eng = gTTS(text=f'means. {em}.', lang='en')
+        file_meaning_eng_path = "file_generated/" + get_random_string(10) + ".mp3"
+        tts_meaning_eng.save(os.path.abspath(file_meaning_eng_path))
+        em_audio = mpy.AudioFileClip(os.path.abspath(file_meaning_eng_path))
+
+        tts_meaning = gTTS(text=f'{vm}.', lang='vi')
         file_meaning_path = "file_generated/" + get_random_string(10) + ".mp3"
         tts_meaning.save(file_meaning_path)
-        m_audio = mpy.AudioFileClip(file_meaning_path)
+        vm_audio = mpy.AudioFileClip(file_meaning_path)
 
-        return w_audio, m_audio
+        return w_audio, em_audio, vm_audio
 
     progress_bar = st.progress(0)  # Initialize the progress bar
 
+    def create_silent_audio(duration):
+        return AudioSegment.silent(duration=duration)
+    
+    def create_audio_file_clip(audio_segment):
+        temp_file_path = os.path.abspath("file_generated/" + get_random_string(10) + ".wav")
+        audio_segment.export(temp_file_path, format="wav")
+        
+        # Create an AudioFileClip from the temporary file
+        audio_file_clip = mpy.AudioFileClip(temp_file_path)
+        
+        return audio_file_clip
     with concurrent.futures.ThreadPoolExecutor() as executor:
         total_tasks = len(words)
         completed_tasks = 0
 
-        for w, m in words.items():
-            result = executor.submit(generate_audio, w, m)
+        for w, meanings in words.items():
+            em = meanings['English Meaning']
+            vm = meanings['Vietnamese Meaning']
+            result = executor.submit(generate_audio, w, em, vm)
             while not result.done():
                 time.sleep(0.1)  # Sleep for a short time
                 completed_progress = completed_tasks / total_tasks
@@ -92,14 +111,21 @@ def convert_to_audio_parallel_with_status(words):
             progress = completed_tasks / total_tasks
             progress_bar.progress(progress)
 
-            w_audio, m_audio = result.result()
+            w_audio, em_audio, vm_audio = result.result()
             audio_segments.append(w_audio)
-            audio_segments.append(m_audio)
+            audio_segments.append(create_audio_file_clip(create_silent_audio(500)))
+            audio_segments.append(w_audio)
+            audio_segments.append(create_audio_file_clip(create_silent_audio(500)))
+            audio_segments.append(w_audio)
+            audio_segments.append(create_audio_file_clip(create_silent_audio(1000)))
+            audio_segments.append(em_audio)
+            audio_segments.append(create_audio_file_clip(create_silent_audio(1000)))
+            audio_segments.append(vm_audio)
+            audio_segments.append(create_audio_file_clip(create_silent_audio(2000)))
 
     concatenated_audio = mpy.concatenate_audioclips(audio_segments)
     concatenated_audio_file = 'output.mp3'
     concatenated_audio.write_audiofile(concatenated_audio_file)
-
 
 def detectLanguage(text):
     lang = detect(text)
@@ -121,26 +147,30 @@ def main():
 
     col1= st.empty()
     col2 = st.empty()
+    col3 = st.empty()
     with col1:
         word = st.text_input('Word').strip()
     with col2:
-        meaning = st.text_input('Meaning').strip()
+        english_meaning = st.text_input('English Meaning').strip()
+    with col3:
+        vietnamese_meaning = st.text_input('Vietnamese Meaning').strip()
 
-    if st.button('Add') and meaning:
-        if detect(meaning) != 'vi':
-            st.error('Data add unsuccessful. Meaning is not in Vietnamese.')
+    if st.button('Add') and vietnamese_meaning:
+        if detect(vietnamese_meaning) != 'vi':
+            st.error('Data add unsuccessful. Vietnamese meaning is not in Vietnamese.')
         else:
-            add_word(words, word, meaning)
+            add_word(words, word, english_meaning, vietnamese_meaning)
             st.success('Word added successfully.')
 
     st.header("Word Dictionary")
-    df = pd.DataFrame(words.items(), columns=['Word', 'Meaning'])
+    df = pd.DataFrame([(word, meanings['English Meaning'], meanings['Vietnamese Meaning']) for word, meanings in words.items()],
+                      columns=['Word', 'English Meaning', 'Vietnamese Meaning'])
     df['Select'] = [False] * len(df)
 
     selected_rows = []
     for i, row in df.iterrows():
         row['Select'] = st.checkbox(
-            f'{row["Word"]} : {row["Meaning"]}', key=f'checkbox_{i}')
+            f'{row["Word"]} : {row["English Meaning"]} : {row["Vietnamese Meaning"]}', key=f'checkbox_{i}')
         if row['Select']:
             selected_rows.append(row["Word"]) 
 
@@ -150,12 +180,14 @@ def main():
         if st.button('Delete Selected'):
             delete_selected_words(words, selected_rows) 
             st.success('Data deleted successfully.')
+            st.experimental_rerun()
 
     with button_col2:
         if st.button('Delete All'):
             words = {} 
             save_data(words)
             st.success('All data deleted successfully.')
+            st.experimental_rerun()
 
     with button_col3:
         if st.button('Convert Selected to Audio'):
