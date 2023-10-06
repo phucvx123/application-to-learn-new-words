@@ -64,20 +64,16 @@ def convert_to_audio_parallel_with_status(words):
     audio_segments = []
 
     def generate_audio(w, em, vm):
-        tts_word = gTTS(text=f'{w}.', lang='en')
-        file_word_path = "file_generated/" + get_random_string(10) + ".mp3"
-        tts_word.save(os.path.abspath(file_word_path))
-        w_audio = mpy.AudioFileClip(os.path.abspath(file_word_path))
+        def save_and_load_audio(text, lang):
+            tts = gTTS(text=text, lang=lang)
+            temp_file_path = os.path.abspath("file_generated/" + get_random_string(10) + ".mp3")
+            tts.save(temp_file_path)
+            audio_clip = mpy.AudioFileClip(temp_file_path)
+            return audio_clip
 
-        tts_meaning_eng = gTTS(text=f'means. {em}.', lang='en')
-        file_meaning_eng_path = "file_generated/" + get_random_string(10) + ".mp3"
-        tts_meaning_eng.save(os.path.abspath(file_meaning_eng_path))
-        em_audio = mpy.AudioFileClip(os.path.abspath(file_meaning_eng_path))
-
-        tts_meaning = gTTS(text=f'{vm}.', lang='vi')
-        file_meaning_path = "file_generated/" + get_random_string(10) + ".mp3"
-        tts_meaning.save(file_meaning_path)
-        vm_audio = mpy.AudioFileClip(file_meaning_path)
+        w_audio = save_and_load_audio(f'{w}.', 'en')
+        em_audio = save_and_load_audio(f'{em}.', 'en')
+        vm_audio = save_and_load_audio(f'{vm}.', 'vi')
 
         return w_audio, em_audio, vm_audio
 
@@ -149,18 +145,23 @@ def main():
     col2 = st.empty()
     col3 = st.empty()
     with col1:
-        word = st.text_input('Word').strip()
+        word = st.text_input('Word', key="Word").strip()
     with col2:
-        english_meaning = st.text_input('English Meaning').strip()
+        english_meaning = st.text_input('English Meaning', key="English_Meaning").strip()
     with col3:
-        vietnamese_meaning = st.text_input('Vietnamese Meaning').strip()
-
-    if st.button('Add') and vietnamese_meaning:
-        if detect(vietnamese_meaning) != 'vi':
-            st.error('Data add unsuccessful. Vietnamese meaning is not in Vietnamese.')
-        else:
-            add_word(words, word, english_meaning, vietnamese_meaning)
-            st.success('Word added successfully.')
+        vietnamese_meaning = st.text_input('Vietnamese Meaning', key="Vietnamese_Meaning").strip()
+    
+    def saveword():
+        if vietnamese_meaning:
+            if detect(vietnamese_meaning) != 'vi':
+                st.error('Data add unsuccessful. Vietnamese meaning is not in Vietnamese.')
+            else:
+                add_word(words, word, english_meaning, vietnamese_meaning)
+                st.success('Word added successfully.')
+                st.session_state["Word"] = ""
+                st.session_state["English_Meaning"] = ""
+                st.session_state["Vietnamese_Meaning"] = ""
+    st.button('Add', on_click=saveword) 
 
     st.header("Word Dictionary")
     df = pd.DataFrame([(word, meanings['English Meaning'], meanings['Vietnamese Meaning']) for word, meanings in words.items()],
