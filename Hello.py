@@ -24,7 +24,7 @@ hide_streamlit_style = """
 <style>
 footer {visibility: hidden;}
 footer:after {
-    content: '\u00A9 From HaNoi with Love.';
+    content: '\u00A9 Made with Love <3 <3 <3';
     visibility: visible;
     display: block;
     position: relative;
